@@ -1,0 +1,3 @@
+- Search text using /
+- Go back after a jump using b
+- Invoke with -p to paste text from the clipboard directly
