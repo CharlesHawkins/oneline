@@ -1,7 +1,9 @@
 # Oneline
 Oneline is a program that displays text files the terminal in the manner of less, but only one line at a time, for distraction-free reading. It supports reading text files or text from the clipboard, and for text files supports saving your place.
 You can invoke it with:
+
 	oneline.py Book.txt
+	
 The first line will be displayed. To move up and down lines you can use the arrows or k and j (as in vim or less). Space and enter also move down a line. If the line is longer than the terminal width, an inverted > will be displayed at the end of the window; you can scroll horizontally with the arrows or h and l. If wrap is turned on, scrolling down will instead scroll right until there is no more to see on that line, and vice-versa for scrolling up. Wrap can be toggled with w.
 Quit with q.
 Other features include:
