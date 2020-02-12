@@ -59,6 +59,7 @@ try:
 	old_settings = tty.tcgetattr(stdin.fileno())
 	tty.setcbreak(stdin, tty.TCSANOW)
 	line_n = 0
+	prev_n = -1
 	if save:
 		savename = '.%s.bookmark'%argv[1]
 		try:
@@ -136,8 +137,10 @@ try:
 		elif c == 'n':
 			showline = not showline
 		elif c == 'g':
+			prev_n = line_n
 			line_n = 0
 		elif c == 'G':
+			prev_n = line_n
 			line_n = len(lines)-1
 		elif c == 'S':
 			clearln(w)
@@ -202,7 +205,12 @@ try:
 		elif c == 'q':
 			clearln(w)
 			break
+		elif c == 'b' and prev_n >= 0:
+			goto = prev_n
+			prev_n = line_n
+			line_n = goto
 		elif c.isdigit():
+			prev_n = line_n
 			goto = int(c)
 			while True:
 				clearln(w)
