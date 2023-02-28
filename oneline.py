@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
 import tty
 import shutil
-from sys import stderr, stdout, stdin, argv
+from os import path
+from sys import stderr, stdout, stdin, version_info
 import unicodedata
+import argparse as ap
+
+par = ap.ArgumentParser(description = 'View a text file one line at a time.', epilog = 'Keys:\nJ/Down:  Scroll down a line\nK/Up:  Scroll up a  line\nH/Left:  Scroll left one screen\nL/Right:  Scroll right one screen\nGG:  Go to the beginning of the file\nShift-G:  Go to the end of the file\nA number: Affects the next command as follows:\n  J/Down:  Scroll down by N lines\n  K/Up:  Scroll up by N lines\n  G:  Go to line N\nP:  Show a progress bar, with percentage. Press any key to dismiss\nN:  Toggle line numbers\nShift-S:  Save a bookmark for the present location. The next time oneline is launched wiht the same file, reading will start at this line. The bookmark is stored in a file called .filename.txt.bookmark (if the file being read is filename.txt)\nW: Toggle line wrap. If line wrap is on, then scrolling up/down will actually scroll left/right if there is text off-screen in the given direction on the current line\nB:  Go back to the line before the last "long" jump. Long jumps are GG, Shift-G, any movement command preceeded by a number, and B (so B undoes itself and only keeps one jump worth of "history")\nShift-P:  Append the current system clipboard contents to the existing text. Only works if input was from a pipe or the clipboard (i.e. not a text file). Requires the pyperclip module.\nCtrl-P:  Replace the current text with text from the system clipboard\nQ:  Quit', formatter_class=ap.RawDescriptionHelpFormatter)
+par.add_argument('Input', nargs = '?', help = 'The text file to read. If not given (and -p is also not specified), or if "-" is given, then the text to display will be read from stdin')
+par.add_argument('-w', '--wrap', action = 'store_true', help = 'Turn on line wrap by default. If line wrap is on then scrolling up/down will actually scroll left/right if there is more text offscreen on the current line in that direction', dest = 'w')
+par.add_argument('-p', '--paste', action = 'store_true', help = 'Read text from the clipboard. No input file should be specified in this case.', dest = 'p')
+
+
+args = par.parse_args()
+
+if version_info.major < 3:
+	stderr.write('Oneline requires python 3\n')
+	exit(1)
 
 try:
 	import pyperclip
@@ -16,37 +30,72 @@ try:
 	procname.setprocname('oneline')
 except ImportError:
 	pass
-
+save = False
 esc = '\x1b'	# The escape character
 csi = esc + '['	# Control Sequence Introducer, used for terminal control sequences
 def sgr(n):	# Return a string that when printed will send a Select Graphic Rendition command to the terminal. n should be an integer indicating the display mode to select
 	return(csi + str(n) + 'm')
+
 def with_sgr(n, string):	# Return a string containing the given string with graphic rendition code n, and a code that resets the terminal after
 	return(sgr(n)+string+sgr(0))
+
 def clearln(n):
 	stdout.write('\r' + ' ' * n + '\r')
+
 def write_more_indicator_right():	# Print the inverted '>', used to indicate there is more text on the current line to the right of the screen
 	stdout.write(with_sgr(7, '>'))
+
 def write_more_indicator_left():	# Print the inverted '<', used to indicate there is more text on the current line to the left of the screen
 	stdout.write(with_sgr(7, '<'))
 
+def get_pasted_lines(newlines=False):
+	pasted_lines = None
+	if not newlines:
+		clearln(w)
+		nl = ''
+	else:
+		nl = '\n'
+	if not paste:
+		stdout.write('Pasting requires the pyperclip module' + nl)
+	elif save:
+		stdout.write('Cannot paste when reading from a file' + nl)
+	else:
+		try:
+			pasted = pyperclip.paste()
+			if(pasted == ''):
+				stdout.write('No text on clipboard' + nl)
+			else:
+				pasted_lines = []
+				for pasted_line in pasted.split('\n'):
+					pasted_lines += textwrap.wrap(pasted_line, width=min(80,w))
+			if not newlines:
+				stdout.write('Pasted')
+		except FileNotFoundError as e:
+			stdout.write('Pyperclip requires %s to be in the PATH'%e.filename + nl)
+	return pasted_lines
+
 try:
-	if len(argv) < 2 or argv[1] == '-':
-		fname = 'stdin'
-		f = stdin
+	if args.p:
+		w = shutil.get_terminal_size((80, 20)).columns	# w is the total screen width
+		lines = get_pasted_lines(newlines = True)
+		if lines is None:
+			exit(1)
 		save = False
 	else:
-		fname = argv[1]
-		f = open(fname, 'r', encoding = 'utf-8', errors='surrogateescape')
-		save = True
-	unproc_lines = f.readlines()
-	try:
-		lines = [line.expandtabs() for line in unproc_lines]
-	except UnicodeDecodeError:
-		lines = unproc_lines
-	f.close()
+		if args.Input is None or args.Input == '-':
+			f = stdin
+			save = False
+		else:
+			f = open(args.Input, 'r', encoding = 'utf-8', errors='surrogateescape')
+			save = True
+		unproc_lines = f.readlines()
+		try:
+			lines = [line.expandtabs() for line in unproc_lines]
+		except UnicodeDecodeError:
+			lines = unproc_lines
+		f.close()
 except IOError as e:
-	stderr.write('%s: %s\n'%(fname, e.strerror))
+	stderr.write('%s: %s\n'%(e.filename, e.strerror))
 	exit(1)
 
 try:
@@ -61,7 +110,8 @@ try:
 	line_n = 0
 	prev_n = -1
 	if save:
-		savename = '.%s.bookmark'%argv[1]
+		#savename = '.%s.bookmark'%args.Input
+		savename = path.join(path.dirname(args.Input),f'.{path.basename(args.Input)}.bookmark')
 		try:
 			bkmkfile = open(savename, 'r')
 			line_n = min(int(bkmkfile.read()), len(lines)-1)
@@ -70,7 +120,7 @@ try:
 	showline = False
 	hpos = 0
 	c = ''
-	wrap = True
+	wrap = args.w
 	while True:
 		line = lines[line_n].rstrip()
 		w = shutil.get_terminal_size((80, 20)).columns	# w is the total screen width
@@ -148,13 +198,11 @@ try:
 				stdout.write('Cannot save position when reading from stdin')
 			else:
 				try:
-					bkmkfile = open(savename, 'w')
-					bkmkfile.write(str(line_n))
-					stdout.write('Saved')
+					with open(savename, 'w') as bkmkfile:
+						bkmkfile.write(str(line_n))
+						stdout.write('Saved')
 				except IOError as e:
 					stdout.write('%s: %s'%(savename, e.strerror))
-				finally:
-					bkmkfile.close()
 			stdout.flush()
 			stdin.read(1)
 		elif c == 'p':
@@ -175,25 +223,13 @@ try:
 			stdout.flush()
 			stdin.read(1)
 		elif c == 'P' or c == '\x10':
-			clearln(w)
-			if not paste:
-				stdout.write('Pasting requires the pyperclip module')
-			elif save:
-				stdout.write('Cannot paste when reading from a file')
-			else:
-				pasted = pyperclip.paste()
-				if(pasted == ''):
-					stdout.write('No text on clipboard')
+			pasted_lines = get_pasted_lines()
+			if pasted_lines:
+				if c == 'P':
+					lines += pasted_lines
 				else:
-					pasted_lines = []
-					for pasted_line in pasted.split('\n'):
-						pasted_lines += textwrap.wrap(pasted_line, width=min(80,w))
-					if c == 'P':
-						lines += pasted_lines
-					else:
-						lines = pasted_lines
-						line_n = 0
-					stdout.write('Pasted')
+					lines = pasted_lines
+					line_n = 0
 			stdout.flush()
 			stdin.read(1)
 		elif c == 'w':
