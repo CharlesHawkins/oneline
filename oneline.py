@@ -89,7 +89,7 @@ def main():
 		stderr.write('%s: %s\n'%(e.filename, e.strerror))
 		exit(1)
 
-	old_settings = tty.tcgetattr(sys.stdin.fileno())
+
 	try:
 		if sys.stdin.closed:
 			try:
@@ -97,6 +97,7 @@ def main():
 			except IOError as e:
 				stdout.write('Error opening /dev/tty: %s. Reading from standard input may not work on this system.'%e.strerror)
 				exit(1)
+		old_settings = tty.tcgetattr(sys.stdin.fileno())
 		tty.setcbreak(sys.stdin, tty.TCSANOW)
 		line_n = 0
 		prev_n = -1
